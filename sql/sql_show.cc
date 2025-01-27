@@ -6732,38 +6732,39 @@ int fill_schema_engines(THD *thd, TABLE_LIST *tables, COND *cond)
 int fill_schema_collation(THD *thd, TABLE_LIST *tables, COND *cond)
 {
   CHARSET_INFO **cs;
-  const char *wild= thd->lex->wild ? thd->lex->wild->ptr() : NullS;
-  TABLE *table= tables->table;
-  CHARSET_INFO *scs= system_charset_info;
-  for (cs= all_charsets ;
-       cs < all_charsets + array_elements(all_charsets)  ;
-       cs++ )
+  const char *wild = thd->lex->wild ? thd->lex->wild->ptr() : NullS;
+  TABLE *table = tables->table;
+  CHARSET_INFO *scs = system_charset_info;
+  for (cs = all_charsets;
+       cs < all_charsets + array_elements(all_charsets);
+       cs++)
   {
     CHARSET_INFO **cl;
-    CHARSET_INFO *tmp_cs= cs[0];
+    CHARSET_INFO *tmp_cs = cs[0];
     if (!tmp_cs || !(tmp_cs->state & MY_CS_AVAILABLE) ||
-         (tmp_cs->state & MY_CS_HIDDEN) ||
+        (tmp_cs->state & MY_CS_HIDDEN) ||
         !(tmp_cs->state & MY_CS_PRIMARY))
       continue;
-    CHARSET_INFO *def_cl= thd->variables.character_set_collations.
+    CHARSET_INFO *def_cl = thd->variables.character_set_collations.
                             get_collation_for_charset(thd, tmp_cs);
-    for (cl= all_charsets;
-         cl < all_charsets + array_elements(all_charsets)  ;
-         cl ++)
+    for (cl = all_charsets;
+         cl < all_charsets + array_elements(all_charsets);
+         cl++)
     {
-      CHARSET_INFO *tmp_cl= cl[0];
+      CHARSET_INFO *tmp_cl = cl[0];
       if (!tmp_cl || !(tmp_cl->state & MY_CS_AVAILABLE) ||
           !my_charset_same(tmp_cs, tmp_cl))
-	continue;
+        continue;
       if (!(wild && wild[0] &&
-	  wild_case_compare(scs, tmp_cl->coll_name.str, wild)))
+          wild_case_compare(scs, tmp_cl->coll_name.str, wild)))
       {
-        LEX_CSTRING context_collation_name=
+        LEX_CSTRING context_collation_name =
           tmp_cl->get_collation_name(MY_COLLATION_NAME_MODE_CONTEXT);
-        LEX_CSTRING full_collation_name=
+        LEX_CSTRING full_collation_name =
           tmp_cl->get_collation_name(MY_COLLATION_NAME_MODE_FULL);
-        bool is_context= cmp(context_collation_name, full_collation_name) &&
+        bool is_context = cmp(context_collation_name, full_collation_name) &&
             !(thd->variables.old_behavior & OLD_MODE_NO_NULL_COLLATION_IDS);
+
         /*
           Some collations are applicable to multiple character sets.
           Display them only once, with the short name (without the
@@ -6772,35 +6773,48 @@ int fill_schema_collation(THD *thd, TABLE_LIST *tables, COND *cond)
         if (is_context &&
             cmp(tmp_cl->cs_name, Lex_cstring(STRING_WITH_LEN("utf8mb4"))))
           continue;
-	restore_record(table, s->default_values);
+        restore_record(table, s->default_values);
         table->field[0]->store(context_collation_name, scs);
         if (is_context)
         {
           table->field[1]->set_null(); // CHARACTER_SET_NAME
           table->field[2]->set_null(); // ID
           table->field[3]->set_null(); // IS_DEFAULT
-          table->field[6]->set_null(); // Comment
+          table->field[6]->set_null(); // COMMENT
+          table->field[7]->set_null(); // TAILORING
         }
         else
         {
           table->field[1]->set_notnull(); // CHARACTER_SET_NAME
           table->field[1]->store(tmp_cl->cs_name, scs);
           table->field[2]->set_notnull(); // ID
-          table->field[2]->store((longlong) tmp_cl->number, TRUE);
+          table->field[2]->store((longlong)tmp_cl->number, TRUE);
           table->field[3]->set_notnull(); // IS_DEFAULT
           table->field[3]->store(
             Show::Yes_or_empty::value(def_cl == tmp_cl), scs);
           if (tmp_cl->comment)
           {
             LEX_CSTRING comment;
-            comment.str= tmp_cl->comment;
-            comment.length= strlen(comment.str);
+            comment.str = tmp_cl->comment;
+            comment.length = strlen(comment.str);
             table->field[6]->store(&comment, scs);
+          }
+
+          if (tmp_cl->tailoring_info)
+          {
+            LEX_CSTRING tailoring;
+            tailoring.str = tmp_cl->tailoring_info; // Tailoring string
+            tailoring.length = strlen(tailoring.str);
+            table->field[7]->store(&tailoring, scs); // TAILORING column
+          }
+          else
+          {
+            table->field[7]->set_null(); 
           }
         }
         table->field[4]->store(
           Show::Yes_or_empty::value(tmp_cl->compiled_flag()), scs);
-        table->field[5]->store((longlong) tmp_cl->strxfrm_multiply, TRUE);
+        table->field[5]->store((longlong)tmp_cl->strxfrm_multiply, TRUE);
         if (schema_table_store_record(thd, table))
           return 1;
       }
@@ -6808,6 +6822,7 @@ int fill_schema_collation(THD *thd, TABLE_LIST *tables, COND *cond)
   }
   return 0;
 }
+
 
 
 int fill_schema_coll_charset_app(THD *thd, TABLE_LIST *tables, COND *cond)
@@ -9982,6 +9997,7 @@ ST_FIELD_INFO collation_fields_info[]=
   Column("IS_COMPILED",                Yes_or_empty(), NOT_NULL, "Compiled"),
   Column("SORTLEN",                    SLonglong(3),   NOT_NULL, "Sortlen"),
   Column("COMMENT",                    Varchar(80),    NOT_NULL),
+  Column("TAILORING",                  Varchar(255),   NULLABLE, "Tailoring"),
   CEnd()
 };
 
